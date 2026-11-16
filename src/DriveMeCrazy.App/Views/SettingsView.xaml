@@ -1,0 +1,74 @@
+<UserControl x:Class="DriveMeCrazy.App.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="32,26,32,24" MaxWidth="900" HorizontalAlignment="Left">
+            <TextBlock Text="Settings" Style="{StaticResource PageTitle}" Margin="0,0,0,18" />
+
+            <TextBlock Text="Scanning" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+            <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+                <DockPanel>
+                    <ComboBox DockPanel.Dock="Right" Width="110" ItemsSource="{Binding YearChoices}" SelectedItem="{Binding OldDriverYears}" />
+                    <StackPanel Margin="0,0,24,0">
+                        <TextBlock Text="Flag drivers as old after (years)" FontWeight="SemiBold" />
+                        <TextBlock Text="Drivers at least this old show up under Drivers → Old drivers." Style="{StaticResource Caption}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <TextBlock Text="Safety" Style="{StaticResource SectionTitle}" Margin="0,16,0,8" />
+            <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+                <DockPanel>
+                    <CheckBox DockPanel.Dock="Right" IsChecked="{Binding CreateRestorePoint}" MinWidth="0" />
+                    <StackPanel Margin="0,0,24,0">
+                        <TextBlock Text="Create a System Restore point before installing" FontWeight="SemiBold" />
+                        <TextBlock Text="Lets you roll back with Windows' System Restore if a driver causes trouble. If System Protection is off, you'll be asked whether to turn it on." Style="{StaticResource Caption}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Open System Protection" Command="{Binding OpenSystemProtectionCommand}" />
+                    <StackPanel Margin="0,0,24,0">
+                        <TextBlock Text="System Protection" FontWeight="SemiBold" />
+                        <TextBlock Text="Windows' own settings for restore points." Style="{StaticResource Caption}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <TextBlock Text="Appearance" Style="{StaticResource SectionTitle}" Margin="0,16,0,8" />
+            <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+                <DockPanel>
+                    <ComboBox DockPanel.Dock="Right" Width="110" ItemsSource="{Binding ThemeChoices}" SelectedItem="{Binding Theme}" />
+                    <StackPanel Margin="0,0,24,0">
+                        <TextBlock Text="Theme" FontWeight="SemiBold" />
+                        <TextBlock Text="Follow Windows, or always light / dark." Style="{StaticResource Caption}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <TextBlock Text="Shortcuts" Style="{StaticResource SectionTitle}" Margin="0,16,0,8" />
+            <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+                <WrapPanel>
+                    <Button Content="Windows Update settings" Command="{Binding OpenWindowsUpdateCommand}" Margin="0,0,8,0" />
+                    <Button Content="Microsoft Store updates" Command="{Binding OpenStoreUpdatesCommand}" Margin="0,0,8,0" />
+                    <Button Content="Open logs folder" Command="{Binding OpenLogsCommand}" />
+                </WrapPanel>
+            </Border>
+
+            <TextBlock Text="About" Style="{StaticResource SectionTitle}" Margin="0,16,0,8" />
+            <Border Style="{StaticResource Card}">
+                <DockPanel>
+                    <Image DockPanel.Dock="Left" Source="/Assets/logo.png" Width="44" Height="44" Margin="0,0,14,0" VerticalAlignment="Top" />
+                    <StackPanel>
+                        <TextBlock FontWeight="SemiBold">
+                            <Run Text="DriveMeCrazy" /> <Run Text="{Binding Version, Mode=OneWay}" />
+                        </TextBlock>
+                        <TextBlock Style="{StaticResource Caption}" Text="Free and open source under the MIT licence. No ads, no tracking, no upsells." Margin="0,2,0,6" />
+                        <Button Style="{StaticResource LinkButton}" Content="{Binding RepoUrl}" Command="{Binding OpenRepoCommand}" HorizontalAlignment="Left" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test -c Release
+
+      - name: Publish single-file exe
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          dotnet publish src/DriveMeCrazy.App -c Release -r win-x64 --self-contained `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true -p:DebugType=none `
+            -p:Version=$version -o publish
+          $hash = (Get-FileHash publish/DriveMeCrazy.exe -Algorithm SHA256).Hash
+          "$hash  DriveMeCrazy.exe" | Out-File publish/DriveMeCrazy.exe.sha256 -Encoding ascii
+          "HASH=$hash" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            publish/DriveMeCrazy.exe
+            publish/DriveMeCrazy.exe.sha256
+          body: |
+            ## DriveMeCrazy ${{ github.ref_name }}
+
+            Download **DriveMeCrazy.exe** below. It's a single file and needs no installer and no .NET. Run it and accept the admin prompt.
+
+            > Windows SmartScreen may warn because the app isn't code-signed yet: **More info → Run anyway**.
+
+            **SHA-256:** `${{ env.HASH }}`
+          generate_release_notes: true
