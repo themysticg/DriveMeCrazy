@@ -29,20 +29,13 @@ jobs:
             -p:Version=$version -o publish
           $hash = (Get-FileHash publish/DriveMeCrazy.exe -Algorithm SHA256).Hash
           "$hash  DriveMeCrazy.exe" | Out-File publish/DriveMeCrazy.exe.sha256 -Encoding ascii
-          "HASH=$hash" | Out-File $env:GITHUB_ENV -Append
+          ./scripts/release-notes.ps1 -Version $version -Sha256 $hash -OutFile release-notes.md
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          name: DriveMeCrazy ${{ github.ref_name }}
           files: |
             publish/DriveMeCrazy.exe
             publish/DriveMeCrazy.exe.sha256
-          body: |
-            ## DriveMeCrazy ${{ github.ref_name }}
-
-            Download **DriveMeCrazy.exe** below. It's a single file and needs no installer and no .NET. Run it and accept the admin prompt.
-
-            > Windows SmartScreen may warn because the app isn't code-signed yet: **More info → Run anyway**.
-
-            **SHA-256:** `${{ env.HASH }}`
-          generate_release_notes: true
+          body_path: release-notes.md
