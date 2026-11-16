@@ -39,7 +39,36 @@ public sealed record OsInfo(bool IsWindows11, int? DisplayVersionCode, bool IsAr
 }
 
 /// <summary>Result of looking up one installed driver in the catalog.</summary>
-public sealed record CatalogLookup(DriverInfo Driver, IReadOnlyList<string> HardwareIds, IReadOnlyList<CatalogEntry> Candidates)
+public sealed record CatalogLookup(DriverInfo Driver, IReadOnlyList<string> HardwareIds, IReadOnlyList<CatalogEntry> Candidates,
+    bool WindowsPrefersCurrent = false)
 {
     public CatalogEntry? Best => Candidates.Count > 0 ? Candidates[0] : null;
+
+    /// <summary>
+    /// Drops versions Windows already refused for this device (it ranked the installed driver higher), and any
+    /// older versions too, since Windows would refuse those as well.
+    /// </summary>
+    public CatalogLookup WithoutDeclined(IEnumerable<string> declinedKeys, IEnumerable<string>? notForDeviceKeys = null)
+    {
+        string prefix = Driver.DeviceId + "|";
+        var refused = declinedKeys
+            .Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Select(k => Services.VersionText.Parse(k[prefix.Length..]))
+            .Where(v => v is not null)
+            .Max();
+        // Versions whose package was downloaded and found not to list this device: drop exactly those.
+        var mismatched = new HashSet<string>((notForDeviceKeys ?? [])
+            .Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Select(k => k[prefix.Length..]), StringComparer.OrdinalIgnoreCase);
+        if (refused is null && mismatched.Count == 0) return this;
+
+        var kept = Candidates
+            .Where(c => refused is null || (Services.VersionText.Parse(c.Version) is { } v && v > refused))
+            .Where(c => c.Version is null || !mismatched.Contains(c.Version))
+            .ToList();
+        return kept.Count == Candidates.Count ? this
+            : this with { Candidates = kept, WindowsPrefersCurrent = kept.Count == 0 && refused is not null };
+    }
+
+    public static string DeclinedKey(string deviceId, string? version) => $"{deviceId}|{version}";
 }

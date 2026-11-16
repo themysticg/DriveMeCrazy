@@ -22,13 +22,23 @@ public sealed class DeviceInventoryService
                 if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(version) || deviceId is null)
                     continue;
 
+                // WMI's driver list can lag until a restart after a driver is replaced, so prefer
+                // the live values from the PnP manager when they're available.
+                var date = ParseWmiDate(mo["DriverDate"] as string);
+                var liveVersion = DeviceProperties.GetDriverVersion(deviceId);
+                if (liveVersion is not null && !string.Equals(liveVersion, version, StringComparison.OrdinalIgnoreCase))
+                {
+                    version = liveVersion;
+                    date = DeviceProperties.GetDriverDate(deviceId) ?? date;
+                }
+
                 result.Add(new DriverInfo(
                     name.Trim(),
                     mo["DeviceClass"] as string,
                     mo["Manufacturer"] as string,
                     mo["DriverProviderName"] as string,
                     version,
-                    ParseWmiDate(mo["DriverDate"] as string),
+                    date,
                     mo["InfName"] as string,
                     mo["HardWareID"] as string,
                     deviceId));

@@ -39,10 +39,9 @@ public sealed class DriverCatalogService : IDisposable
         {
             ct.ThrowIfCancellationRequested();
             var html = await _http.GetStringAsync(CatalogBase + "Search.aspx?q=" + Uri.EscapeDataString(term), ct);
-            var rows = CatalogParser.ParseSearch(html);
-            all.AddRange(rows);
-            // A specific ID with good results is enough; otherwise widen the search.
-            if (CatalogPicker.Pick(rows, driver, _os).Count > 0) break;
+            // Search every term (specific and general) so the newest package isn't missed; the INF check
+            // during install still makes sure a package really targets this device.
+            all.AddRange(CatalogParser.ParseSearch(html));
         }
         var picked = CatalogPicker.Pick(all, driver, _os);
         Log.Info($"Catalog: {driver.DeviceName} ({driver.Version}) -> {picked.Count} newer package(s)" +
@@ -51,10 +50,16 @@ public sealed class DriverCatalogService : IDisposable
     }
 
     /// <summary>
-    /// Downloads, verifies and installs the best matching package. Requires admin.
-    /// With <paramref name="dryRun"/> it stops right before installing (used by tests and --verify-catalog).
+    /// Step 1 (needs internet): downloads the best package, checks its Microsoft signature, unpacks it and finds
+    /// the INF that lists this device. Tries up to four candidates. Returns null plus a reason when none fits.
     /// </summary>
-    public async Task<InstallProgress> InstallAsync(CatalogLookup lookup, IProgress<InstallProgress>? progress, CancellationToken ct, bool dryRun = false)
+    public async Task<(PreparedDriver? Prepared, string? Problem)> PrepareAsync(
+        CatalogLookup lookup, IProgress<InstallProgress>? progress, CancellationToken ct) =>
+        await PrepareAsync(lookup, progress, ct, notForDevice: null);
+
+    /// <param name="notForDevice">Receives versions whose INF turned out not to list this device.</param>
+    public async Task<(PreparedDriver? Prepared, string? Problem)> PrepareAsync(
+        CatalogLookup lookup, IProgress<InstallProgress>? progress, CancellationToken ct, ICollection<string>? notForDevice)
     {
         string id = lookup.Driver.DeviceId;
         void Report(InstallState s, string m, double? pct = null) => progress?.Report(new InstallProgress(id, s, m, pct));
@@ -63,13 +68,14 @@ public sealed class DriverCatalogService : IDisposable
         foreach (var candidate in lookup.Candidates.Take(4))
         {
             ct.ThrowIfCancellationRequested();
-            string work = Path.Combine(DownloadsDir, candidate.UpdateId);
+            string work = Path.Combine(DownloadsDir, $"{candidate.UpdateId}-{Guid.NewGuid():N}");
+            bool keep = false;
             try
             {
                 Report(InstallState.Downloading, $"Downloading {candidate.Version}…");
                 var cab = await DownloadAsync(candidate, work, p => Report(InstallState.Downloading, $"Downloading {candidate.Version}… {p:0}%", p), ct);
 
-                Report(InstallState.Installing, "Checking Microsoft signature…");
+                Report(InstallState.Downloading, "Checking Microsoft signature…");
                 var (valid, signer) = Authenticode.Verify(cab);
                 if (!valid || !Authenticode.IsMicrosoft(signer))
                 {
@@ -86,44 +92,115 @@ public sealed class DriverCatalogService : IDisposable
                 {
                     lastProblem = $"Package {candidate.Version} isn't made for this exact device";
                     Log.Info($"Catalog: {candidate.UpdateId} has no INF for {lookup.Driver.DeviceName}");
+                    if (candidate.Version is not null) notForDevice?.Add(candidate.Version);
                     continue;
                 }
 
-                if (dryRun)
-                    return new InstallProgress(id, InstallState.Skipped,
-                        $"Dry run OK: {candidate.Version} signed by Microsoft ({signer}), {Path.GetFileName(inf)} lists this device");
-
-                Report(InstallState.Installing, $"Installing {candidate.Version}…");
-                var (exitCode, output) = await RunAsync(Path.Combine(Environment.SystemDirectory, "pnputil.exe"),
-                    $"/add-driver \"{inf}\" /install", ct);
-                Log.Info($"pnputil exit {exitCode}: {output.Replace(Environment.NewLine, " | ")}");
-                bool reboot = exitCode == 3010 || output.Contains("reboot", StringComparison.OrdinalIgnoreCase);
-
-                var now = await Task.Run(() => _inventory.GetDriverVersion(id), ct);
-                if (now is not null && !string.Equals(now, lookup.Driver.Version, StringComparison.OrdinalIgnoreCase))
-                    return new InstallProgress(id, InstallState.Installed, $"Updated to {now}" + (reboot ? " - restart required" : ""), 100, reboot);
-                if (reboot)
-                    return new InstallProgress(id, InstallState.Installed, $"Installed {candidate.Version} - restart to finish", 100, true);
-
-                lastProblem = exitCode == 0
-                    ? $"Windows kept the current driver (it ranks it higher than {candidate.Version})"
-                    : $"pnputil couldn't install {candidate.Version} (exit code {exitCode})";
+                keep = true;
+                Report(InstallState.Queued, $"Ready to install {candidate.Version}");
+                return (new PreparedDriver(lookup, candidate, inf, work, signer), null);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                lastProblem = ex.Message;
-                Log.Error($"Catalog install of {candidate.UpdateId} failed", ex);
+                lastProblem = ex is HttpRequestException ? $"Couldn't download: {ex.Message}" : ex.Message;
+                Log.Error($"Catalog prepare of {candidate.UpdateId} failed", ex);
             }
             finally
             {
-                TryDelete(work);
+                if (!keep) TryDelete(work);
             }
         }
-        return new InstallProgress(id, InstallState.Failed, lastProblem ?? "No suitable package found");
+        return (null, lastProblem ?? "No suitable package found");
     }
 
+    /// <summary>
+    /// Step 2 (no internet needed): installs a prepared package with pnputil and confirms the result
+    /// by reading the device's live driver version. Requires admin.
+    /// </summary>
+    public async Task<InstallProgress> InstallPreparedAsync(PreparedDriver prepared, IProgress<InstallProgress>? progress, CancellationToken ct)
+    {
+        var lookup = prepared.Lookup;
+        string id = lookup.Driver.DeviceId;
+        var candidate = prepared.Candidate;
+        try
+        {
+            // Another row for the same hardware may already have installed this package.
+            var before = DeviceProperties.GetDriverVersion(id) ?? lookup.Driver.Version;
+            if (VersionsEqual(before, candidate.Version))
+                return new InstallProgress(id, InstallState.Installed, $"Updated to {before}", 100);
+
+            progress?.Report(new InstallProgress(id, InstallState.Installing, $"Installing {candidate.Version}…"));
+            var (exitCode, output) = await RunAsync(Path.Combine(Environment.SystemDirectory, "pnputil.exe"),
+                $"/add-driver \"{prepared.InfPath}\" /install", ct);
+            Log.Info($"pnputil exit {exitCode}: {output.Replace(Environment.NewLine, " | ")}");
+
+            var result = PnpUtilResult.Interpret(exitCode, output);
+            var after = DeviceProperties.GetDriverVersion(id);
+            bool changed = after is not null && !VersionsEqual(after, lookup.Driver.Version);
+
+            if (changed)
+                return new InstallProgress(id, InstallState.Installed,
+                    $"Updated to {after}" + (result.RebootRequired ? " – restart required" : ""), 100, result.RebootRequired);
+            if (result.InstalledOnDevice || result.RebootRequired)
+                return new InstallProgress(id, InstallState.Installed,
+                    $"Installed {candidate.Version} – restart to finish", 100, true);
+            if (result.WindowsKeptCurrent)
+                return new InstallProgress(id, InstallState.Skipped,
+                    $"Windows kept the current driver – it ranks it as a better match than {candidate.Version}");
+            return new InstallProgress(id, InstallState.Failed, exitCode == 0
+                ? $"Windows kept the current driver (it ranks it higher than {candidate.Version})"
+                : $"pnputil couldn't install {candidate.Version} (exit code {exitCode})");
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            Log.Error($"Catalog install of {candidate.UpdateId} failed", ex);
+            return new InstallProgress(id, InstallState.Failed, ex.Message);
+        }
+        finally
+        {
+            TryDelete(prepared.WorkDir);
+        }
+    }
+
+    /// <summary>Prepares and (unless <paramref name="dryRun"/>) installs one driver.</summary>
+    public async Task<InstallProgress> InstallAsync(CatalogLookup lookup, IProgress<InstallProgress>? progress, CancellationToken ct, bool dryRun = false)
+    {
+        var (prepared, problem) = await PrepareAsync(lookup, progress, ct);
+        if (prepared is null)
+            return new InstallProgress(lookup.Driver.DeviceId, InstallState.Failed, problem ?? "No suitable package found");
+        if (dryRun)
+        {
+            TryDelete(prepared.WorkDir);
+            return new InstallProgress(lookup.Driver.DeviceId, InstallState.Skipped,
+                $"Dry run OK: {prepared.Candidate.Version} signed by Microsoft ({prepared.Signer}), {Path.GetFileName(prepared.InfPath)} lists this device");
+        }
+        return await InstallPreparedAsync(prepared, progress, ct);
+    }
+
+    internal static bool VersionsEqual(string? a, string? b)
+    {
+        var va = VersionText.Parse(a);
+        var vb = VersionText.Parse(b);
+        return va is not null && vb is not null ? va == vb : string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Downloads with a few retries, so a brief network blip doesn't fail the whole update.</summary>
     private async Task<string> DownloadAsync(CatalogEntry entry, string work, Action<double> onPercent, CancellationToken ct)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try { return await DownloadOnceAsync(entry, work, onPercent, ct); }
+            catch (HttpRequestException ex) when (attempt < 4)
+            {
+                Log.Info($"Catalog: download attempt {attempt} failed ({ex.Message}), retrying");
+                await Task.Delay(TimeSpan.FromSeconds(5 * attempt), ct);
+            }
+        }
+    }
+
+    private async Task<string> DownloadOnceAsync(CatalogEntry entry, string work, Action<double> onPercent, CancellationToken ct)
     {
         var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {

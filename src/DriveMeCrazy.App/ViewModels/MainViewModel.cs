@@ -286,7 +286,8 @@ public partial class MainViewModel : ObservableObject
             await gate.WaitAsync();
             try
             {
-                var lookup = await _catalog.FindAsync(row.Driver);
+                var lookup = (await _catalog.FindAsync(row.Driver))
+                    .WithoutDeclined(Settings.DeclinedCatalogDrivers, Settings.NotForDeviceCatalogDrivers);
                 _catalogResults[row.Driver.DeviceId] = lookup;
                 row.Lookup = lookup;
                 row.IsSelected = lookup.Best is not null;
@@ -348,32 +349,74 @@ public partial class MainViewModel : ObservableObject
             }
 
             foreach (var r in rows) { r.State = InstallState.Queued; r.StateText = "Waiting…"; }
-            for (int i = 0; i < rows.Count; i++)
+            int steps = rows.Count * 2, step = 0;
+
+            void Finish(DriverRowViewModel row, InstallProgress result)
             {
-                var row = rows[i];
-                int position = i + 1;
-                if (_cts.IsCancellationRequested)
-                {
-                    row.State = InstallState.Cancelled; row.StateText = "Cancelled";
-                    continue;
-                }
-                var progress = new Progress<InstallProgress>(p =>
-                {
-                    row.State = p.State;
-                    row.StateText = p.Message;
-                    StatusText = $"{position} of {rows.Count} · {row.Device}: {p.Message}";
-                });
-                InstallProgress result;
-                try { result = await _catalog.InstallAsync(row.Lookup!, progress, _cts.Token); }
-                catch (OperationCanceledException) { result = new InstallProgress(row.Driver.DeviceId, InstallState.Cancelled, "Cancelled"); }
                 row.State = result.State;
                 row.StateText = result.Message;
                 results.Add((row, result));
-                ProgressValue = 100.0 * (i + 1) / rows.Count;
                 AddHistory(new HistoryEntry(DateTime.Now, "Driver (Catalog)", row.Device, result.Message, result.IsDone, result.RebootRequired));
                 if (result.IsDone) _catalogResults.Remove(row.Driver.DeviceId);
                 if (result.RebootRequired) RestartRequired = true;
+                if (result.State == InstallState.Skipped && result.Message.StartsWith("Windows kept") && row.Lookup?.Best is { } refused)
+                {
+                    // Windows ranked the installed driver higher; don't offer this version again.
+                    var key = CatalogLookup.DeclinedKey(row.Driver.DeviceId, refused.Version);
+                    if (!Settings.DeclinedCatalogDrivers.Contains(key)) Settings.DeclinedCatalogDrivers.Add(key);
+                    SaveSettings();
+                    _catalogResults[row.Driver.DeviceId] = row.Lookup.WithoutDeclined(Settings.DeclinedCatalogDrivers, Settings.NotForDeviceCatalogDrivers);
+                }
+                else if (result.State == InstallState.Skipped && row.Lookup is not null)
+                {
+                    _catalogResults[row.Driver.DeviceId] = row.Lookup.WithoutDeclined(Settings.DeclinedCatalogDrivers, Settings.NotForDeviceCatalogDrivers);
+                }
             }
+
+            Progress<InstallProgress> ProgressFor(DriverRowViewModel row, string phase) => new(p =>
+            {
+                if (row.State is InstallState.Installed or InstallState.Failed) return;
+                row.State = p.State;
+                row.StateText = p.Message;
+                StatusText = $"{phase} · {row.Device}: {p.Message}";
+            });
+
+            // Phase 1: download and verify everything while the internet connection is guaranteed to be up.
+            var prepared = new List<(DriverRowViewModel Row, PreparedDriver Package)>();
+            foreach (var row in rows)
+            {
+                if (_cts.IsCancellationRequested) { Finish(row, new(row.Driver.DeviceId, InstallState.Cancelled, "Cancelled")); continue; }
+                try
+                {
+                    var notForDevice = new List<string>();
+                    var (package, problem) = await _catalog.PrepareAsync(row.Lookup!, ProgressFor(row, "Downloading"), _cts.Token, notForDevice);
+                    foreach (var v in notForDevice)
+                    {
+                        var key = CatalogLookup.DeclinedKey(row.Driver.DeviceId, v);
+                        if (!Settings.NotForDeviceCatalogDrivers.Contains(key)) Settings.NotForDeviceCatalogDrivers.Add(key);
+                    }
+                    if (notForDevice.Count > 0) SaveSettings();
+
+                    if (package is not null) prepared.Add((row, package));
+                    else if (notForDevice.Count > 0 && problem?.Contains("exact device") == true)
+                        Finish(row, new(row.Driver.DeviceId, InstallState.Skipped, "No Catalog package is made for this exact device model"));
+                    else Finish(row, new(row.Driver.DeviceId, InstallState.Failed, problem ?? "No suitable package"));
+                }
+                catch (OperationCanceledException) { Finish(row, new(row.Driver.DeviceId, InstallState.Cancelled, "Cancelled")); }
+                ProgressValue = 100.0 * ++step / steps;
+            }
+
+            // Phase 2: install. Network adapters go last because replacing their driver drops the connection.
+            foreach (var (row, package) in prepared.OrderBy(p => p.Package.IsNetworkAdapter))
+            {
+                if (_cts.IsCancellationRequested) { Finish(row, new(row.Driver.DeviceId, InstallState.Cancelled, "Cancelled")); continue; }
+                InstallProgress result;
+                try { result = await _catalog.InstallPreparedAsync(package, ProgressFor(row, "Installing"), _cts.Token); }
+                catch (OperationCanceledException) { result = new InstallProgress(row.Driver.DeviceId, InstallState.Cancelled, "Cancelled"); }
+                Finish(row, result);
+                ProgressValue = 100.0 * ++step / steps;
+            }
+            ProgressValue = 100;
 
             int ok = results.Count(r => r.Result.IsDone);
             int failed = results.Count(r => r.Result.State == InstallState.Failed);
@@ -572,12 +615,14 @@ public partial class MainViewModel : ObservableObject
             {
                 var enabled = await Task.Run(_restore.EnableProtection);
                 result = enabled.Success
-                    ? await Task.Run(() => _restore.Create("DriveMeCrazy: before installing updates"))
+                    ? await Task.Run(() => _restore.Create("DriveMeCrazy: before installing updates", skipProtectionCheck: true))
                     : enabled;
             }
             else
             {
                 RestorePointStatus = "Skipped by you";
+                Log.Info("Restore point: System Protection is off; user chose to continue without one");
+                AddHistory(new HistoryEntry(DateTime.Now, "Safety", "System Restore point", "Skipped (System Protection is off)", false));
                 return true;
             }
         }

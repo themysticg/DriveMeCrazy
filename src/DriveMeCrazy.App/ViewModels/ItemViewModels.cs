@@ -223,10 +223,10 @@ public partial class DriverRowViewModel : ObservableObject
 
     partial void OnStateChanged(InstallState? value)
     {
-        if (value is InstallState.Installed or InstallState.UpToDate) IsSelected = false;
+        if (value is InstallState.Installed or InstallState.UpToDate or InstallState.Skipped) IsSelected = false;
     }
 
-    public bool HasCandidate => Lookup?.Best is not null && State is not (InstallState.Installed or InstallState.UpToDate);
+    public bool HasCandidate => Lookup?.Best is not null && State is not (InstallState.Installed or InstallState.UpToDate or InstallState.Skipped);
     public bool CanSelect => HasCandidate;
 
     /// <summary>What we know about a newer driver for this device.</summary>
@@ -236,12 +236,14 @@ public partial class DriverRowViewModel : ObservableObject
         : UpdateNote is not null ? UpdateNote
         : Lookup is null ? ""
         : Lookup.Best is { } b ? $"{b.Version} · {b.Date:yyyy-MM-dd}"
+        : Lookup.WindowsPrefersCurrent ? "Windows prefers the current driver"
         : "No newer driver in the Catalog";
 
     public string NewerTone => State switch
     {
         InstallState.Installed or InstallState.UpToDate => "Good",
         InstallState.Failed => "Bad",
+        InstallState.Skipped => "Warn",
         InstallState.Downloading or InstallState.Installing or InstallState.Queued => "Info",
         _ when IsSearching => "Neutral",
         _ when UpdateNote is not null || HasCandidate => "Info",

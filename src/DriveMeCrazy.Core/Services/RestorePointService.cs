@@ -9,8 +9,26 @@ public sealed class RestorePointService
     private const int ModifySettings = 12;
     private const int BeginSystemChange = 100;
 
-    public RestorePointResult Create(string description)
+    /// <summary>
+    /// False when System Protection is turned off. Windows stores this as RPSessionInterval = 0;
+    /// in that state CreateRestorePoint can fail with an empty COM error instead of a clear code.
+    /// </summary>
+    public static bool? IsProtectionEnabled()
     {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore");
+            using var policy = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Policies\Microsoft\Windows NT\SystemRestore");
+            if (policy?.GetValue("DisableSR") is int disabled && disabled == 1) return false;
+            return key?.GetValue("RPSessionInterval") is int interval ? interval != 0 : null;
+        }
+        catch { return null; }
+    }
+
+    public RestorePointResult Create(string description, bool skipProtectionCheck = false)
+    {
+        if (!skipProtectionCheck && IsProtectionEnabled() == false)
+            return new(false, "System Protection is turned off on this PC", ProtectionDisabled: true);
         try
         {
             using var cls = new ManagementClass(new ManagementScope(@"\\.\root\default"), new ManagementPath("SystemRestore"), null);
@@ -30,10 +48,14 @@ public sealed class RestorePointService
         }
         catch (Exception ex)
         {
-            Log.Error("Restore point failed", ex);
+            Log.Error($"Restore point failed (0x{ex.HResult:X8})", ex);
             bool disabled = ex is ManagementException { ErrorCode: ManagementStatus.NotSupported }
-                            || ex.Message.Contains("disabled", StringComparison.OrdinalIgnoreCase);
-            return new(false, disabled ? "System Protection is turned off on this PC" : ex.Message, disabled);
+                            || ex.Message.Contains("disabled", StringComparison.OrdinalIgnoreCase)
+                            || IsProtectionEnabled() == false;
+            string message = disabled ? "System Protection is turned off on this PC"
+                : string.IsNullOrWhiteSpace(ex.Message) ? $"Windows couldn't create a restore point (0x{ex.HResult:X8})"
+                : ex.Message;
+            return new(false, message, disabled);
         }
     }
 
