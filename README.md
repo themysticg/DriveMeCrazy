@@ -36,7 +36,7 @@ DriveMeCrazy does the opposite:
 | | |
 |---|---|
 | 🧩 **Drivers & firmware** | Finds newer signed drivers/firmware for your devices on Windows Update and installs them one by one with live status. |
-| 🕰️ **Old drivers report** | Lists every driver older than N years (Windows' built-in drivers excluded), with a one-click *Search online* for the manufacturer's page. |
+| 🕰️ **Old drivers → newer drivers** | Lists every driver older than N years (Windows' built-in drivers excluded) and looks each one up in the **Microsoft Update Catalog**, which has many more Microsoft-signed drivers than Windows Update offers automatically. Pick the ones you want and click **Update selected drivers**. |
 | 🪟 **Windows Update** | Security, quality and optional Windows updates in the same list. |
 | 🛍️ **Microsoft Store apps** | Checks and updates installed Store apps. |
 | 🛟 **Safety net** | Automatic restore point (offers to turn System Protection on if it's off), install history, and logs. |
@@ -57,14 +57,24 @@ Requires Windows 10 version 2004 or later, or Windows 11, x64.
 
 ## FAQ
 
-**Can it update *any* driver?** It can install any driver that hardware makers publish to Windows Update, which covers most
-chipset, GPU, audio, network, Bluetooth, camera and firmware updates. Some vendors only publish certain drivers on their own
-websites. Those show up in **Old drivers**, and *Search online* takes you to the manufacturer.
+**Can it update *any* driver?** It can install any driver that hardware makers publish to Microsoft, through Windows Update or the
+[Microsoft Update Catalog](https://www.catalog.update.microsoft.com). That covers most chipset, GPU, audio, network, Bluetooth and
+camera drivers. A few vendors only publish some drivers on their own websites. For those, the 🌐 button in **Old drivers** searches the web for the manufacturer's page.
+
+**How are Catalog drivers checked?** Before anything is installed, every package must pass all of these checks:
+
+1. It's downloaded only from Microsoft's servers.
+2. It has a valid Microsoft (WHQL) signature, verified with Windows' `WinVerifyTrust`.
+3. It's strictly newer than your current driver.
+4. Its INF lists your device's exact hardware ID for your CPU architecture.
+
+It's then installed with Windows' own `pnputil`, and DriveMeCrazy re-reads the device's driver version to confirm the update really happened.
 
 **Is it safe?** It uses the same Windows Update Agent API and Microsoft Store APIs that Windows itself uses, and it makes a
 restore point first. If something goes wrong, open Device Manager → device → *Roll Back Driver*, or use System Restore.
 
 **Does it collect data?** No. There's no telemetry. Logs and history stay on your PC in `%LocalAppData%\DriveMeCrazy`.
+The Catalog search sends the hardware IDs of your old devices (e.g. `VEN_10EC&DEV_8125`) to Microsoft's catalog website. You can turn that off in Settings.
 
 ## Build from source
 

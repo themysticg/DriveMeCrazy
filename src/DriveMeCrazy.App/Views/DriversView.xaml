@@ -22,16 +22,29 @@
                 <Grid Margin="12,16,12,12">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
-                    <DockPanel Margin="0,0,0,12">
-                        <CheckBox DockPanel.Dock="Right" Content="Show all drivers" IsChecked="{Binding ShowAllDrivers}" />
-                        <TextBlock Style="{StaticResource Secondary}" VerticalAlignment="Center"
-                                   Text="Drivers older than your threshold (Settings). Windows' own built-in drivers aren't counted. If no update shows up here, use &quot;Search online&quot; and download only from the manufacturer's official site." />
+                    <TextBlock Style="{StaticResource Secondary}" Margin="0,0,0,12" Text="{Binding Main.OldDriversSummary}" />
+                    <DockPanel Grid.Row="1" Margin="0,0,0,12">
+                        <Button DockPanel.Dock="Right" Style="{DynamicResource AccentButtonStyle}" Padding="16,7" Margin="8,0,0,0"
+                                Command="{Binding Main.InstallCatalogDriversCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource Icon}" Text="&#xE896;" FontSize="14" Margin="0,0,8,0" />
+                                <TextBlock Text="{Binding Main.CatalogInstallText}" />
+                            </StackPanel>
+                        </Button>
+                        <Button DockPanel.Dock="Right" Command="{Binding Main.FindCatalogDriversCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" FontSize="14" Margin="0,0,8,0" />
+                                <TextBlock Text="Find newer drivers" />
+                            </StackPanel>
+                        </Button>
+                        <CheckBox Content="Show all drivers" IsChecked="{Binding ShowAllDrivers}" VerticalAlignment="Center" />
                     </DockPanel>
-                    <DataGrid Grid.Row="1" ItemsSource="{Binding DriverRows}" AutoGenerateColumns="False" IsReadOnly="True"
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding DriverRows}" AutoGenerateColumns="False" IsReadOnly="True"
                               HeadersVisibility="Column" GridLinesVisibility="None" CanUserResizeRows="False"
-                              SelectionMode="Single" RowHeight="48">
+                              SelectionMode="Single" SelectionUnit="Cell" RowHeight="52">
                         <DataGrid.Resources>
                             <Style x:Key="Cell" TargetType="TextBlock">
                                 <Setter Property="VerticalAlignment" Value="Center" />
@@ -40,6 +53,14 @@
                             </Style>
                         </DataGrid.Resources>
                         <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="" Width="Auto">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate DataType="{x:Type vm:DriverRowViewModel}">
+                                        <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanSelect}"
+                                                  MinWidth="0" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTemplateColumn Header="Status" Width="Auto" SortMemberPath="Status">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate DataType="{x:Type vm:DriverRowViewModel}">
@@ -61,14 +82,26 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="*" MinWidth="110" ElementStyle="{StaticResource Cell}" />
+                            <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="Auto" MinWidth="110" ElementStyle="{StaticResource Cell}" />
                             <DataGridTextColumn Header="Date" Binding="{Binding DateText}" Width="Auto" ElementStyle="{StaticResource Cell}" />
                             <DataGridTextColumn Header="Age" Binding="{Binding AgeText}" Width="Auto" SortMemberPath="Age" ElementStyle="{StaticResource Cell}" />
-                            <DataGridTextColumn Header="Windows Update" Binding="{Binding UpdateNote}" Width="*" ElementStyle="{StaticResource Cell}" />
+                            <DataGridTemplateColumn Header="Newer driver" Width="1.6*" MinWidth="200">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate DataType="{x:Type vm:DriverRowViewModel}">
+                                        <Border Style="{StaticResource Badge}" Tag="{Binding NewerTone}" Margin="6,0" HorizontalAlignment="Left"
+                                                ToolTip="{Binding Lookup.Best.Title}">
+                                            <TextBlock Text="{Binding NewerText}" Style="{StaticResource BadgeText}" TextTrimming="CharacterEllipsis" />
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTemplateColumn Header="" Width="Auto">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate DataType="{x:Type vm:DriverRowViewModel}">
-                                        <Button Content="Search online" Command="{Binding SearchOnlineCommand}" Padding="10,3" Margin="6,0" VerticalAlignment="Center" />
+                                        <Button Command="{Binding SearchOnlineCommand}" Padding="8,5" Margin="6,0" VerticalAlignment="Center"
+                                                ToolTip="Search the web for this device's driver (manufacturer's site)">
+                                            <TextBlock Style="{StaticResource Icon}" Text="&#xE774;" FontSize="14" />
+                                        </Button>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>

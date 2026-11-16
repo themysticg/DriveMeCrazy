@@ -55,6 +55,12 @@ public partial class SourceState : ObservableObject
 
     public void Fail(string message) { Status = SourceStatus.Error; Message = message; }
 
+    /// <summary>Refresh the count after installs, keeping the "done" state.</summary>
+    public void UpdateCount(int n)
+    {
+        if (Status == SourceStatus.Done) Done(n);
+    }
+
     /// <summary>Short text for the overview tile badge.</summary>
     public string ShortMessage => Status == SourceStatus.Error ? "Couldn't check" : Message;
 
@@ -77,7 +83,7 @@ public partial class UpdateItemViewModel : ObservableObject
     [ObservableProperty] private bool isSelected;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsWorking), nameof(HasState), nameof(CanSelect), nameof(StateTone))]
+    [NotifyPropertyChangedFor(nameof(IsWorking), nameof(HasState), nameof(CanSelect), nameof(StateTone), nameof(IsDone), nameof(ShowAdvice))]
     private InstallState? state;
 
     [ObservableProperty] private string? stateText;
@@ -90,18 +96,23 @@ public partial class UpdateItemViewModel : ObservableObject
 
     partial void OnStateChanged(InstallState? value)
     {
-        if (value is InstallState.Installed) IsSelected = false;
+        if (IsDone) IsSelected = false;
     }
 
     public bool IsWorking => State is InstallState.Downloading or InstallState.Installing or InstallState.Queued;
     public bool HasState => State is not null;
+    public bool IsDone => State is InstallState.Installed or InstallState.UpToDate;
+    public bool ShowAdvice => !IsDone;
     public bool IsIndeterminate => Percent is null;
     public double PercentValue => Percent ?? 0;
-    public bool CanSelect => Item.Advice != UpdateAdvice.NeedsLicense && State is not InstallState.Installed;
+    public bool CanSelect => Item.Advice != UpdateAdvice.NeedsLicense && !IsDone;
+
+    /// <summary>Still needs installing (counts towards badges and tiles).</summary>
+    public bool IsPending => CanSelect && Item.Advice is UpdateAdvice.Recommended or UpdateAdvice.Optional;
 
     public string StateTone => State switch
     {
-        InstallState.Installed => "Good",
+        InstallState.Installed or InstallState.UpToDate => "Good",
         InstallState.Failed => "Bad",
         InstallState.Skipped or InstallState.Cancelled => "Warn",
         _ => "Info",
@@ -178,12 +189,68 @@ public partial class UpdateItemViewModel : ObservableObject
 /// <summary>A row in the "Old drivers" table.</summary>
 public partial class DriverRowViewModel : ObservableObject
 {
-    public DriverRowViewModel(DriverInfo driver, int oldYears)
+    private readonly Action? _selectionChanged;
+
+    public DriverRowViewModel(DriverInfo driver, int oldYears, CatalogLookup? lookup = null, Action? selectionChanged = null)
     {
         Driver = driver;
         Age = driver.AgeYears(DateTime.Now);
         IsOld = driver.IsOld(DateTime.Now, oldYears);
+        _selectionChanged = selectionChanged;
+        this.lookup = lookup;
+        isSelected = lookup?.Best is not null;
     }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCandidate), nameof(NewerText), nameof(NewerTone), nameof(CanSelect))]
+    private CatalogLookup? lookup;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewerText), nameof(NewerTone))]
+    private bool isSearching;
+
+    [ObservableProperty] private bool isSelected;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewerText), nameof(NewerTone), nameof(CanSelect), nameof(HasCandidate))]
+    private InstallState? state;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewerText))]
+    private string? stateText;
+
+    partial void OnIsSelectedChanged(bool value) => _selectionChanged?.Invoke();
+
+    partial void OnStateChanged(InstallState? value)
+    {
+        if (value is InstallState.Installed or InstallState.UpToDate) IsSelected = false;
+    }
+
+    public bool HasCandidate => Lookup?.Best is not null && State is not (InstallState.Installed or InstallState.UpToDate);
+    public bool CanSelect => HasCandidate;
+
+    /// <summary>What we know about a newer driver for this device.</summary>
+    public string NewerText =>
+        StateText is not null ? StateText
+        : IsSearching ? "Searching the Microsoft Update Catalog…"
+        : UpdateNote is not null ? UpdateNote
+        : Lookup is null ? ""
+        : Lookup.Best is { } b ? $"{b.Version} · {b.Date:yyyy-MM-dd}"
+        : "No newer driver in the Catalog";
+
+    public string NewerTone => State switch
+    {
+        InstallState.Installed or InstallState.UpToDate => "Good",
+        InstallState.Failed => "Bad",
+        InstallState.Downloading or InstallState.Installing or InstallState.Queued => "Info",
+        _ when IsSearching => "Neutral",
+        _ when UpdateNote is not null || HasCandidate => "Info",
+        _ when Lookup is not null => "Neutral",
+        _ => "Neutral",
+    };
+
+    public bool HasNewerText => !string.IsNullOrEmpty(NewerText);
+    partial void OnUpdateNoteChanged(string? value) { OnPropertyChanged(nameof(NewerText)); OnPropertyChanged(nameof(NewerTone)); }
 
     public DriverInfo Driver { get; }
     public string Device => Driver.DeviceName;

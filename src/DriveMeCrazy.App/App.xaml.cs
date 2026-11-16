@@ -28,12 +28,12 @@ public partial class App : Application
 }
 
 /// <summary>Command-line options. --screenshot DIR renders every page to PNG and exits (used for docs/CI).</summary>
-public sealed record StartupOptions(string? ScreenshotDir, bool ScanOnStart, string? Theme)
+public sealed record StartupOptions(string? ScreenshotDir, bool ScanOnStart, string? Theme, bool VerifyCatalog = false)
 {
     public static StartupOptions Parse(string[] args)
     {
         string? shots = null, theme = null;
-        bool scan = true;
+        bool scan = true, verify = false;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i].ToLowerInvariant())
@@ -41,8 +41,9 @@ public sealed record StartupOptions(string? ScreenshotDir, bool ScanOnStart, str
                 case "--screenshot" when i + 1 < args.Length: shots = args[++i]; break;
                 case "--theme" when i + 1 < args.Length: theme = args[++i]; break;
                 case "--no-scan": scan = false; break;
+                case "--verify-catalog": verify = true; break;
             }
         }
-        return new StartupOptions(shots, scan, theme);
+        return new StartupOptions(shots, scan, theme, verify);
     }
 }

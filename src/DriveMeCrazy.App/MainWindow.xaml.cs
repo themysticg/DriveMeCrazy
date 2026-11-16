@@ -57,6 +57,8 @@ public partial class MainWindow : Window
             }
             _vm.SelectedNav = _vm.NavItems[0];
             await Task.Delay(300);
+            if (_options.VerifyCatalog)
+                File.WriteAllLines(Path.Combine(dir, "catalog-verify.txt"), await _vm.VerifyCatalogAsync());
             File.WriteAllText(Path.Combine(dir, "summary.txt"),
                 $"drivers={_vm.DriverList.Items.Count} windows={_vm.WindowsList.Items.Count} store={_vm.StoreList.Items.Count} " +
                 $"recommended={_vm.RecommendedCount} oldDrivers={_vm.OldDriverCount} storeStatus={_vm.StoreSource.Message} wuStatus={_vm.WindowsSource.Message}");

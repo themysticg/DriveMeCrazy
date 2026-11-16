@@ -16,6 +16,16 @@
                 </DockPanel>
             </Border>
 
+            <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+                <DockPanel>
+                    <CheckBox DockPanel.Dock="Right" IsChecked="{Binding SearchCatalog}" MinWidth="0" />
+                    <StackPanel Margin="0,0,24,0">
+                        <TextBlock Text="Search the Microsoft Update Catalog for old drivers" FontWeight="SemiBold" />
+                        <TextBlock Text="After each scan, looks up newer Microsoft-signed drivers for your old devices on catalog.update.microsoft.com (sends their hardware IDs to Microsoft)." Style="{StaticResource Caption}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
             <TextBlock Text="Safety" Style="{StaticResource SectionTitle}" Margin="0,16,0,8" />
             <Border Style="{StaticResource Card}" Margin="0,0,0,8">
                 <DockPanel>

@@ -56,7 +56,7 @@ public sealed class WindowsUpdateService
             }
             var foundIds = new HashSet<string>(found.Select(u => (string)u.Identity.UpdateID), StringComparer.OrdinalIgnoreCase);
             foreach (var missing in updateIds.Where(id => !foundIds.Contains(id)))
-                Final(new InstallProgress(missing, InstallState.Skipped, "No longer offered by Windows Update (may already be installed)"));
+                Final(new InstallProgress(missing, InstallState.UpToDate, "No longer offered by Windows Update (already installed)"));
 
             foreach (dynamic u in found)
             {

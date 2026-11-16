@@ -161,6 +161,7 @@ public partial class SettingsPageViewModel : ObservableObject
         _main = main;
         oldDriverYears = main.Settings.OldDriverYears;
         createRestorePoint = main.Settings.CreateRestorePoint;
+        searchCatalog = main.Settings.SearchCatalog;
         theme = main.Settings.Theme;
     }
 
@@ -172,6 +173,13 @@ public partial class SettingsPageViewModel : ObservableObject
     [ObservableProperty] private int oldDriverYears;
     [ObservableProperty] private bool createRestorePoint;
     [ObservableProperty] private string theme;
+    [ObservableProperty] private bool searchCatalog;
+
+    partial void OnSearchCatalogChanged(bool value)
+    {
+        _main.Settings.SearchCatalog = value;
+        _main.SaveSettings();
+    }
 
     partial void OnOldDriverYearsChanged(int value)
     {

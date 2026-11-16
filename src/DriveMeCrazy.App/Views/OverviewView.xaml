@@ -29,6 +29,13 @@
                                     <TextBlock Text="{Binding Main.InstallAllText}" />
                                 </StackPanel>
                             </Button>
+                            <Button Style="{StaticResource HeroGhostButton}" Command="{Binding Main.ReviewOldDriversCommand}" Margin="10,0,0,0"
+                                    Visibility="{Binding Main.HasCatalogFound, Converter={StaticResource BoolToVis}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Icon}" Text="&#xE772;" Margin="0,0,8,0" FontSize="14" />
+                                    <TextBlock Text="{Binding Main.ReviewDriversText}" />
+                                </StackPanel>
+                            </Button>
                         </WrapPanel>
                     </StackPanel>
                     <Image Grid.Column="1" Source="/Assets/logo.png" Width="112" Height="112" Margin="24,0,0,0" Opacity="0.95"
@@ -82,10 +89,9 @@
                             <TextBlock Style="{StaticResource SectionTitle}">
                                 <Run Text="{Binding Main.OldDriverCount, Mode=OneWay}" /> <Run Text="old drivers" />
                             </TextBlock>
-                            <TextBlock Style="{StaticResource Secondary}" Margin="0,4,0,8"
-                                       Text="Drivers Windows Update has no newer version for. You can look these up on the manufacturer's site." />
-                            <Button Style="{StaticResource LinkButton}" Content="See old drivers →" HorizontalAlignment="Left"
-                                    Command="{Binding Main.NavigateCommand}" CommandParameter="drivers" />
+                            <TextBlock Style="{StaticResource Secondary}" Margin="0,4,0,8" Text="{Binding Main.OldDriversSummary}" />
+                            <Button Style="{StaticResource LinkButton}" Content="Review old drivers →" HorizontalAlignment="Left"
+                                    Command="{Binding Main.ReviewOldDriversCommand}" />
                         </StackPanel>
                     </DockPanel>
                 </Border>

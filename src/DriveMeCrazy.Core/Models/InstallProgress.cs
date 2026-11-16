@@ -1,6 +1,6 @@
 namespace DriveMeCrazy.Core.Models;
 
-public enum InstallState { Queued, Downloading, Installing, Installed, Failed, Skipped, Cancelled }
+public enum InstallState { Queued, Downloading, Installing, Installed, UpToDate, Failed, Skipped, Cancelled }
 
 /// <summary>Progress or final result for one update.</summary>
 public sealed record InstallProgress(
@@ -10,8 +10,11 @@ public sealed record InstallProgress(
     double? Percent = null,
     bool RebootRequired = false)
 {
-    public bool IsFinal => State is InstallState.Installed or InstallState.Failed
+    public bool IsFinal => State is InstallState.Installed or InstallState.UpToDate or InstallState.Failed
         or InstallState.Skipped or InstallState.Cancelled;
+
+    /// <summary>Nothing left to do for this item.</summary>
+    public bool IsDone => State is InstallState.Installed or InstallState.UpToDate;
 }
 
 public sealed record HistoryEntry(

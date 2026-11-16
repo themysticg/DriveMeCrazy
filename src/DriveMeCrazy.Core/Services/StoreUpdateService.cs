@@ -75,7 +75,7 @@ public sealed class StoreUpdateService
                 var job = await manager.SearchForUpdatesAsync(it.Id, string.Empty, string.Empty, string.Empty, options).AsTask(ct);
                 if (job is null)
                 {
-                    Final(new(it.Id, InstallState.Skipped, "Already up to date"));
+                    Final(new(it.Id, InstallState.UpToDate, "Already up to date"));
                     continue;
                 }
                 Final(await WaitAsync(job, it.Id, progress, ct));

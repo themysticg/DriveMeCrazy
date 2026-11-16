@@ -67,6 +67,46 @@ public sealed class DeviceInventoryService
             names);
     }
 
+    /// <summary>
+    /// IDs a driver package may use to target this device, most specific first: all hardware IDs plus
+    /// compatible IDs that still name the exact vendor and device (never generic class codes).
+    /// </summary>
+    public IReadOnlyList<string> GetHardwareIds(string deviceId)
+    {
+        using var searcher = new ManagementObjectSearcher(
+            $"SELECT HardwareID, CompatibleID FROM Win32_PnPEntity WHERE DeviceID = '{EscapeWql(deviceId)}'");
+        foreach (ManagementObject mo in searcher.Get())
+        {
+            using (mo)
+            {
+                var ids = (mo["HardwareID"] as string[] ?? []).Where(i => !string.IsNullOrWhiteSpace(i)).ToList();
+                ids.AddRange(SpecificCompatibleIds(mo["CompatibleID"] as string[] ?? []));
+                return ids.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            }
+        }
+        return [];
+    }
+
+    /// <summary>Keeps compatible IDs like PCI\VEN_10EC&amp;DEV_8125 but drops class-code / generic ones.</summary>
+    internal static IEnumerable<string> SpecificCompatibleIds(IEnumerable<string> compatibleIds) =>
+        compatibleIds.Where(c => !string.IsNullOrWhiteSpace(c)
+                                 && c.Contains("DEV_", StringComparison.OrdinalIgnoreCase)
+                                 && !c.Contains("CC_", StringComparison.OrdinalIgnoreCase)
+                                 && !c.Contains("CLASS_", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The driver version currently bound to a device.</summary>
+    public string? GetDriverVersion(string deviceId)
+    {
+        using var searcher = new ManagementObjectSearcher(
+            $"SELECT DriverVersion FROM Win32_PnPSignedDriver WHERE DeviceID = '{EscapeWql(deviceId)}'");
+        foreach (ManagementObject mo in searcher.Get())
+            using (mo)
+                return mo["DriverVersion"] as string;
+        return null;
+    }
+
+    private static string EscapeWql(string s) => s.Replace("\\", "\\\\").Replace("'", "\\'");
+
     /// <summary>WMI CIM_DATETIME, e.g. "20230709000000.******+***". Only the date part matters.</summary>
     public static DateTime? ParseWmiDate(string? value) =>
         value is { Length: >= 8 } &&
